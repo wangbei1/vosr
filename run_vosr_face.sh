@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# run_vosr_face.sh
+# Run VOSR inference on three face LR datasets with 4 model variants
+# (0.5B / 1.4B  x  multi-step / one-step). Includes ModelScope download.
+# Usage:  bash run_vosr_face.sh
+set -euo pipefail
+
+# =========================================================
+# 0. Paths (edit as needed)
+# =========================================================
+VOSR_ROOT="/data/wubin/VOSR-main"
+CKPT_ROOT="${VOSR_ROOT}/preset/ckpts"
+OUTPUT_ROOT="${VOSR_ROOT}/output"
+
+# Three LR face directories to restore
+INPUT_DIRS=(
+    "/data/wubin/VOSR-main/FFHQ-Ref/test_images/moderate_degrad"
+    "/data/wubin/VOSR-main/FFHQ-Ref/test_images/severe_degrad"
+    "/data/wubin/VOSR-main/CelebA-Test-Ref/celeba_test_images/lq"
+)
+
+# Short tags matching INPUT_DIRS (used in output folder names)
+INPUT_TAGS=(
+    "FFHQ_moderate"
+    "FFHQ_severe"
+    "CelebA_lq"
+)
+
+# 4x super-resolution (change to 1 if your LR is already 512 and you only want restoration)
+UPSCALE=4
+
+# =========================================================
+# 1. Download all weights from ModelScope mirror
+# =========================================================
+mkdir -p "${CKPT_ROOT}"
+
+if ! command -v modelscope &>/dev/null; then
+    echo "[INFO] Installing modelscope CLI ..."
+    pip install -U modelscope -i https://pypi.tuna.tsinghua.edu.cn/simple
+fi
+
+# VOSR_CKPT is one repo containing all 4 models + Qwen VAE + SD2.1 VAE
+# + lightweight decoder + dinov2 cache.
+if [ ! -d "${CKPT_ROOT}/VOSR_0.5B_ms" ]; then
+    echo "[INFO] Downloading VOSR weights from ModelScope to ${CKPT_ROOT} ..."
+    modelscope download \
+        --model LULALULALU/VOSR_CKPT \
+        --local_dir "${CKPT_ROOT}"
+else
+    echo "[INFO] Found ${CKPT_ROOT}/VOSR_0.5B_ms, skip download."
+fi
+
+# Verify expected entries
+for d in \
+    "VOSR_0.5B_ms" "VOSR_0.5B_os" "VOSR_1.4B_ms" "VOSR_1.4B_os" \
+    "Qwen-Image-vae-2d" "stable-diffusion-2-1-base" "torch_cache"; do
+    if [ ! -e "${CKPT_ROOT}/${d}" ]; then
+        echo "[WARN] Missing ${CKPT_ROOT}/${d}, please check the download."
+    fi
+done
+[ ! -f "${CKPT_ROOT}/sd21_lwdecoder.pth" ] && echo "[WARN] Missing sd21_lwdecoder.pth"
+
+# =========================================================
+# 2. Inference configs: 4 (size x steps) variants
+#    Format: <script> <ckpt subdir> <infer_steps> <extra args> <short tag>
+# =========================================================
+# Multi-step uses cfg_scale=0.5 (README's ScreenSR / face-friendly default).
+# For very heavy degradation, try --cfg_scale -0.5 for more generative detail.
+RUN_CONFIGS=(
+    "inference_vosr.py          VOSR_0.5B_ms  25  --cfg_scale 0.5  0.5B_ms_25step"
+    "inference_vosr.py          VOSR_1.4B_ms  25  --cfg_scale 0.5  1.4B_ms_25step"
+    "inference_vosr_onestep.py  VOSR_0.5B_os   1  ''               0.5B_os_1step"
+    "inference_vosr_onestep.py  VOSR_1.4B_os   1  ''               1.4B_os_1step"
+)
+
+# =========================================================
+# 3. Run all combinations: 3 datasets x 4 models = 12 jobs
+# =========================================================
+mkdir -p "${OUTPUT_ROOT}"
+LOG_DIR="${OUTPUT_ROOT}/_logs"
+mkdir -p "${LOG_DIR}"
+
+cd "${VOSR_ROOT}"
+
+for i in "${!INPUT_DIRS[@]}"; do
+    IN_DIR="${INPUT_DIRS[$i]}"
+    IN_TAG="${INPUT_TAGS[$i]}"
+
+    if [ ! -d "${IN_DIR}" ]; then
+        echo "[SKIP] Input dir not found: ${IN_DIR}"
+        continue
+    fi
+
+    for cfg in "${RUN_CONFIGS[@]}"; do
+        read -r SCRIPT CKPT_NAME STEPS EXTRA TAG <<< "${cfg}"
+        [ "${EXTRA}" = "''" ] && EXTRA=""
+
+        OUT_DIR="${OUTPUT_ROOT}/${IN_TAG}/${TAG}"
+        mkdir -p "${OUT_DIR}"
+
+        LOG_FILE="${LOG_DIR}/${IN_TAG}__${TAG}.log"
+
+        echo "================================================================"
+        echo "[RUN] dataset=${IN_TAG}  model=${TAG}"
+        echo "      script=${SCRIPT}"
+        echo "      ckpt  =${CKPT_ROOT}/${CKPT_NAME}"
+        echo "      steps =${STEPS}  extra='${EXTRA}'"
+        echo "      out   =${OUT_DIR}"
+        echo "      log   =${LOG_FILE}"
+        echo "================================================================"
+
+        # shellcheck disable=SC2086
+        python "${SCRIPT}" \
+            -c "${CKPT_ROOT}/${CKPT_NAME}" \
+            -i "${IN_DIR}" \
+            -o "${OUT_DIR}" \
+            -u "${UPSCALE}" \
+            --infer_steps "${STEPS}" \
+            ${EXTRA} 2>&1 | tee "${LOG_FILE}"
+    done
+done
+
+echo
+echo "[DONE] All inferences finished. Results under: ${OUTPUT_ROOT}"
