@@ -80,15 +80,16 @@ done
 
 # =========================================================
 # 2. Inference configs: 4 (size x steps) variants
-#    Format: <script> <ckpt subdir> <infer_steps> <extra args> <short tag>
+#    Format (pipe-separated so EXTRA can contain spaces):
+#       <script>|<ckpt subdir>|<infer_steps>|<extra args>|<short tag>
 # =========================================================
 # Multi-step uses cfg_scale=0.5 (README's ScreenSR / face-friendly default).
 # For very heavy degradation, try --cfg_scale -0.5 for more generative detail.
 RUN_CONFIGS=(
-    "inference_vosr.py          VOSR_0.5B_ms  25  --cfg_scale 0.5  0.5B_ms_25step"
-    "inference_vosr.py          VOSR_1.4B_ms  25  --cfg_scale 0.5  1.4B_ms_25step"
-    "inference_vosr_onestep.py  VOSR_0.5B_os   1  ''               0.5B_os_1step"
-    "inference_vosr_onestep.py  VOSR_1.4B_os   1  ''               1.4B_os_1step"
+    "inference_vosr.py|VOSR_0.5B_ms|25|--cfg_scale 0.5|0.5B_ms_25step"
+    "inference_vosr.py|VOSR_1.4B_ms|25|--cfg_scale 0.5|1.4B_ms_25step"
+    "inference_vosr_onestep.py|VOSR_0.5B_os|1||0.5B_os_1step"
+    "inference_vosr_onestep.py|VOSR_1.4B_os|1||1.4B_os_1step"
 )
 
 # =========================================================
@@ -110,8 +111,8 @@ for i in "${!INPUT_DIRS[@]}"; do
     fi
 
     for cfg in "${RUN_CONFIGS[@]}"; do
-        read -r SCRIPT CKPT_NAME STEPS EXTRA TAG <<< "${cfg}"
-        [ "${EXTRA}" = "''" ] && EXTRA=""
+        # Pipe-split so EXTRA may legitimately contain spaces (e.g. "--cfg_scale 0.5").
+        IFS='|' read -r SCRIPT CKPT_NAME STEPS EXTRA TAG <<< "${cfg}"
 
         OUT_DIR="${OUTPUT_ROOT}/${IN_TAG}/${TAG}"
         mkdir -p "${OUT_DIR}"
