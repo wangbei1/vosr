@@ -41,14 +41,32 @@ fi
 
 # VOSR_CKPT is one repo containing all 4 models + Qwen VAE + SD2.1 VAE
 # + lightweight decoder + dinov2 cache.
-if [ ! -d "${CKPT_ROOT}/VOSR_0.5B_ms" ]; then
-    echo "[INFO] Downloading VOSR weights from ModelScope to ${CKPT_ROOT} ..."
-    modelscope download \
-        --model LULALULALU/VOSR_CKPT \
-        --local_dir "${CKPT_ROOT}"
-else
-    echo "[INFO] Found ${CKPT_ROOT}/VOSR_0.5B_ms, skip download."
-fi
+#
+# NOTE: modelscope download is idempotent and supports resume:
+#   * completed files are verified and skipped
+#   * partially-downloaded files resume via HTTP Range
+#   * transient network errors are retried internally
+# So we always call it — re-running after a crash will simply continue
+# where it left off. Retry up to 4 times at the shell level for hard
+# failures (DNS, auth, etc.) with exponential backoff.
+echo "[INFO] Downloading / resuming VOSR weights from ModelScope to ${CKPT_ROOT} ..."
+MAX_TRIES=4
+SLEEP=2
+for attempt in $(seq 1 ${MAX_TRIES}); do
+    if modelscope download \
+            --model LULALULALU/VOSR_CKPT \
+            --local_dir "${CKPT_ROOT}"; then
+        echo "[INFO] ModelScope download finished on attempt ${attempt}."
+        break
+    fi
+    if [ "${attempt}" -eq "${MAX_TRIES}" ]; then
+        echo "[ERROR] ModelScope download failed after ${MAX_TRIES} attempts."
+        exit 1
+    fi
+    echo "[WARN] Download attempt ${attempt} failed, retrying in ${SLEEP}s ..."
+    sleep "${SLEEP}"
+    SLEEP=$((SLEEP * 2))
+done
 
 # Verify expected entries
 for d in \
