@@ -1,4 +1,12 @@
 import os
+# Disable torch.compile / dynamo *before* importing torch, so that any
+# @torch.compile decorators in models/ become no-ops. Skips multi-minute
+# inductor warm-up / recompilation on every new Python process.
+# Set VOSR_ENABLE_COMPILE=1 to opt back in.
+if os.environ.get("VOSR_ENABLE_COMPILE", "0") != "1":
+    os.environ["TORCH_COMPILE_DISABLE"] = "1"
+    os.environ["TORCHDYNAMO_DISABLE"] = "1"
+
 import sys
 import gc
 import types
@@ -8,6 +16,22 @@ import json
 import math
 import torch
 import torch.nn.functional as F
+
+# Belt-and-suspenders: make torch.compile a pure no-op and flip the dynamo
+# disable flag. The env vars above should be enough on recent PyTorch, but
+# this guarantees it regardless of version.
+if os.environ.get("VOSR_ENABLE_COMPILE", "0") != "1":
+    try:
+        torch._dynamo.config.disable = True  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+    def _vosr_noop_compile(fn=None, *args, **kwargs):
+        if fn is None or not callable(fn):
+            return lambda f: f
+        return fn
+
+    torch.compile = _vosr_noop_compile  # type: ignore[assignment]
 import numpy as np
 from PIL import Image
 from torchvision import transforms
