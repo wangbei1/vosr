@@ -110,6 +110,48 @@ for d in \
 done
 [ ! -f "${CKPT_ROOT}/sd21_lwdecoder.pth" ] && echo "[WARN] Missing sd21_lwdecoder.pth"
 
+# ---------------------------------------------------------------------------
+# Ensure facebookresearch/dinov2 source is available locally, because
+# torch.hub.load() would otherwise try to hit github.com to validate the
+# branch — fatal on hosts without GitHub access. ModelScope's VOSR_CKPT
+# ships the weights but (usually) not the repo code, so clone it here
+# from a China-accessible mirror if missing.
+# ---------------------------------------------------------------------------
+DINOV2_DIR="${CKPT_ROOT}/torch_cache/facebookresearch_dinov2_main"
+if [ ! -f "${DINOV2_DIR}/hubconf.py" ]; then
+    echo "[INFO] dinov2 source not found at ${DINOV2_DIR}, cloning from mirror ..."
+    mkdir -p "${CKPT_ROOT}/torch_cache"
+    rm -rf "${DINOV2_DIR}"
+    # Try mirrors in order: gitee, ghproxy, then raw github as a last resort.
+    for url in \
+        "https://gitee.com/mirrors/dinov2.git" \
+        "https://ghproxy.com/https://github.com/facebookresearch/dinov2.git" \
+        "https://github.com/facebookresearch/dinov2.git"; do
+        echo "[INFO] Trying: ${url}"
+        if git clone --depth 1 "${url}" "${DINOV2_DIR}"; then
+            echo "[INFO] dinov2 cloned successfully from ${url}"
+            break
+        fi
+        rm -rf "${DINOV2_DIR}"
+    done
+    if [ ! -f "${DINOV2_DIR}/hubconf.py" ]; then
+        echo "[ERROR] Failed to obtain dinov2 source from any mirror."
+        echo "        Please manually clone facebookresearch/dinov2 into:"
+        echo "        ${DINOV2_DIR}"
+        exit 1
+    fi
+fi
+
+# Verify the dinov2 pretrained checkpoint is actually present. torch.hub
+# looks for it under <hub_dir>/checkpoints/<file>.pth. If missing we log
+# a warning — the first inference call will then try to download it
+# (which requires network).
+DINOV2_CKPT_DIR="${CKPT_ROOT}/torch_cache/checkpoints"
+if [ ! -d "${DINOV2_CKPT_DIR}" ] || ! ls "${DINOV2_CKPT_DIR}"/dinov2_vitb14*.pth &>/dev/null; then
+    echo "[WARN] dinov2_vitb14 weights not found under ${DINOV2_CKPT_DIR}"
+    echo "       torch.hub will try to download them on first use."
+fi
+
 # =========================================================
 # 2. Inference configs: 4 (size x steps) variants
 #    Format (pipe-separated so EXTRA can contain spaces):
