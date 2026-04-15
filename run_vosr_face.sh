@@ -29,6 +29,27 @@ INPUT_TAGS=(
 # 4x super-resolution (change to 1 if your LR is already 512 and you only want restoration)
 UPSCALE=4
 
+# ---------------------------------------------------------------------------
+# Smoke-test switches.
+#
+# Because models/lightningdit.py uses multiple @torch.compile decorators,
+# the FIRST image after loading each model incurs several minutes of
+# _inductor compilation — tqdm's ETA will look absurd (e.g. 80+ hours)
+# until compile warm-up finishes. Use these switches to verify the full
+# pipeline on a tiny subset before launching the full 12-job sweep.
+#
+#   SMOKE_TEST=1          only run the first dataset x first model combo
+#   ONLY_DATASET=<tag>    only run this dataset tag (e.g. FFHQ_moderate)
+#   ONLY_MODEL=<tag>      only run this model tag   (e.g. 0.5B_os_1step)
+#
+# Examples:
+#   SMOKE_TEST=1 bash run_vosr_face.sh
+#   ONLY_MODEL=0.5B_os_1step bash run_vosr_face.sh
+# ---------------------------------------------------------------------------
+SMOKE_TEST="${SMOKE_TEST:-0}"
+ONLY_DATASET="${ONLY_DATASET:-}"
+ONLY_MODEL="${ONLY_MODEL:-}"
+
 # =========================================================
 # 1. Download all weights from ModelScope mirror
 # =========================================================
@@ -110,9 +131,27 @@ for i in "${!INPUT_DIRS[@]}"; do
         continue
     fi
 
+    # Dataset filter
+    if [ -n "${ONLY_DATASET}" ] && [ "${ONLY_DATASET}" != "${IN_TAG}" ]; then
+        continue
+    fi
+    # Smoke test: only first dataset
+    if [ "${SMOKE_TEST}" = "1" ] && [ "${i}" != "0" ]; then
+        break
+    fi
+
     for cfg in "${RUN_CONFIGS[@]}"; do
         # Pipe-split so EXTRA may legitimately contain spaces (e.g. "--cfg_scale 0.5").
         IFS='|' read -r SCRIPT CKPT_NAME STEPS EXTRA TAG <<< "${cfg}"
+
+        # Model filter
+        if [ -n "${ONLY_MODEL}" ] && [ "${ONLY_MODEL}" != "${TAG}" ]; then
+            continue
+        fi
+        # Smoke test: only first model
+        if [ "${SMOKE_TEST}" = "1" ] && [ "${TAG}" != "0.5B_ms_25step" ]; then
+            continue
+        fi
 
         OUT_DIR="${OUTPUT_ROOT}/${IN_TAG}/${TAG}"
         mkdir -p "${OUT_DIR}"

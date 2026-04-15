@@ -18,6 +18,10 @@ from tqdm import tqdm
 torch.hub.set_dir('preset/ckpts/torch_cache')
 sys.path.append(os.getcwd())
 
+# Enable TF32 matmul on Ampere+ GPUs. The training scripts do this; the
+# inference scripts forgot to, which is free speed for fp32 paths.
+torch.set_float32_matmul_precision('high')
+
 from models.lightningdit import LightningDiT
 from models.light_decoder import LightDecoder
 from vosr import VOSR
