@@ -26,8 +26,19 @@ INPUT_TAGS=(
     "CelebA_lq"
 )
 
-# 4x super-resolution (change to 1 if your LR is already 512 and you only want restoration)
-UPSCALE=4
+# Upscale factor.
+#
+# For the face-restoration benchmarks used here (FFHQ-Ref, CelebA-Test-Ref)
+# the LR images are already 512x512 *degraded* faces and the task is blind
+# face restoration (denoise/deblur/decompress), NOT spatial upscaling.
+# So UPSCALE=1 is the correct setting: input 512, output 512.
+#
+# Using UPSCALE=4 on 512 inputs would run DiT at 2048x2048 internally,
+# i.e. ~256x the self-attention cost of the 512->512 path, which is why
+# 25-step multi-step inference looked hopelessly slow before.
+#
+# Override to 4 only if you are actually doing 128->512 upscaling.
+UPSCALE=1
 
 # ---------------------------------------------------------------------------
 # Smoke-test switches.
