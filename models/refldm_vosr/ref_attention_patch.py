@@ -76,8 +76,14 @@ class CachedRefCrossAttention(nn.Module):
         self.proj = nn.Linear(d_model, d_model)
         self.proj_drop = nn.Dropout(proj_drop)
 
-        # Init proj to zero so the new attention starts with zero contribution.
-        nn.init.zeros_(self.proj.weight)
+        # Small-scale init for proj.weight + zero bias.
+        # Note: a previous version zero-init'd proj.weight to make ref start at
+        # zero, but that also zeroes the backward path through proj, leaving
+        # q/k/v_linear and ref_attn_gate with no gradient until proj escapes
+        # zero. The sigmoid(init_gate) * ref_attn_scale multiplier already
+        # keeps the initial ref contribution small (~0.05), so we keep a real
+        # weight init and let all ref params learn from step 0.
+        nn.init.xavier_uniform_(self.proj.weight, gain=0.1)
         nn.init.zeros_(self.proj.bias)
 
         if qk_norm:
@@ -216,12 +222,6 @@ def _as_ref_tensor(ref_z: Any, args=None) -> Optional[torch.Tensor]:
             ref_z = _pool_tokens(ref_z, max_total)
         return ref_z
     raise ValueError(f"ref_z must be [B,K,N,C] or [B,N,C], got {tuple(ref_z.shape)}")
-
-
-def _split_z_pack(z: Any) -> Tuple[Any, Any]:
-    if isinstance(z, dict):
-        return z.get("lq", None), z.get("ref", None)
-    return z, None
 
 
 def _project_semantic(model: nn.Module, z: Any) -> Optional[torch.Tensor]:
