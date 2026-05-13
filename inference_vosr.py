@@ -1,4 +1,12 @@
 import os
+# Disable torch.compile / dynamo *before* importing torch, so that any
+# @torch.compile decorators in models/ become no-ops. Skips multi-minute
+# inductor warm-up / recompilation on every new Python process.
+# Set VOSR_ENABLE_COMPILE=1 to opt back in.
+if os.environ.get("VOSR_ENABLE_COMPILE", "0") != "1":
+    os.environ["TORCH_COMPILE_DISABLE"] = "1"
+    os.environ["TORCHDYNAMO_DISABLE"] = "1"
+
 import sys
 import gc
 import types
@@ -8,6 +16,22 @@ import json
 import math
 import torch
 import torch.nn.functional as F
+
+# Belt-and-suspenders: make torch.compile a pure no-op and flip the dynamo
+# disable flag. The env vars above should be enough on recent PyTorch, but
+# this guarantees it regardless of version.
+if os.environ.get("VOSR_ENABLE_COMPILE", "0") != "1":
+    try:
+        torch._dynamo.config.disable = True  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+    def _vosr_noop_compile(fn=None, *args, **kwargs):
+        if fn is None or not callable(fn):
+            return lambda f: f
+        return fn
+
+    torch.compile = _vosr_noop_compile  # type: ignore[assignment]
 import numpy as np
 from PIL import Image
 from torchvision import transforms
@@ -17,6 +41,10 @@ from tqdm import tqdm
 
 torch.hub.set_dir('preset/ckpts/torch_cache')
 sys.path.append(os.getcwd())
+
+# Enable TF32 matmul on Ampere+ GPUs. The training scripts do this; the
+# inference scripts forgot to, which is free speed for fp32 paths.
+torch.set_float32_matmul_precision('high')
 
 from models.lightningdit import LightningDiT
 from models.light_decoder import LightDecoder
@@ -130,12 +158,40 @@ def preprocess_raw_image(x, args):
 
 
 def load_dinov2(args, device):
-    if args.enc_type == 'dinov2b':
-        encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitb14')
-    elif args.enc_type == 'dinov2l':
-        encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitl14')
-    elif args.enc_type == 'dinov2g':
-        encoder = torch.hub.load('facebookresearch/dinov2', 'dinov2_vitg14')
+    model_name = {
+        'dinov2b': 'dinov2_vitb14',
+        'dinov2l': 'dinov2_vitl14',
+        'dinov2g': 'dinov2_vitg14',
+    }[args.enc_type]
+
+    # Prefer a local clone of facebookresearch/dinov2 so we never hit
+    # github.com at inference time. torch.hub.set_dir(...) was already
+    # called at module import, so torch.hub.get_dir() returns our local
+    # torch_cache directory.
+    hub_dir = torch.hub.get_dir()
+    candidate_dirs = [
+        os.path.join(hub_dir, 'facebookresearch_dinov2_main'),
+        os.path.join(hub_dir, 'facebookresearch_dinov2_master'),
+        os.path.join(hub_dir, 'hub', 'facebookresearch_dinov2_main'),
+        os.path.join(hub_dir, 'dinov2'),
+        os.path.join(os.path.dirname(hub_dir), 'dinov2'),
+    ]
+    local_repo = next(
+        (d for d in candidate_dirs if os.path.isfile(os.path.join(d, 'hubconf.py'))),
+        None,
+    )
+
+    if local_repo is not None:
+        print(f"[dinov2] Loading from local repo: {local_repo}")
+        encoder = torch.hub.load(local_repo, model_name, source='local', trust_repo=True)
+    else:
+        print(
+            f"[dinov2] WARNING: no local dinov2 repo found under {hub_dir}. "
+            "Falling back to github — this will fail if the host cannot "
+            "reach github.com. To fix, clone facebookresearch/dinov2 into "
+            f"{candidate_dirs[0]} from a China-accessible mirror."
+        )
+        encoder = torch.hub.load('facebookresearch/dinov2', model_name)
     del encoder.head
     encoder.head = torch.nn.Identity()
 

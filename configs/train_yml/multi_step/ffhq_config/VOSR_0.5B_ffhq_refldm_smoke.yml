@@ -1,0 +1,152 @@
+# -----------------------------
+# FFHQ_Ref training config for VOSR-0.5B + Ref-LDM CacheKV + Multi-Ref
+# second-stage sanity check version
+# -----------------------------
+
+train_dataset_config: null
+suffix: '_ffhq_ref_cachekv_multiref_debug'
+
+# -----------------------------
+# Eval setting
+# -----------------------------
+test_lq_dir: null
+test_gt_dir: null
+test_upscale: 1
+
+ffhq_ref_test_use_csv_for_eval: true
+ffhq_ref_eval_hq_dir: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/images1024x1024
+ffhq_ref_eval_lq_dir: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/test_images/severe_degrad
+
+infer_steps: 25
+
+# -----------------------------
+# Training basic setting
+# -----------------------------
+resolution: 512
+
+# multi-ref 会显著增加显存，建议先用 1
+train_batch_size: 1
+gradient_accumulation_steps: 1
+dataloader_num_workers: 2
+
+# -----------------------------
+# Model configuration
+# -----------------------------
+patch_size: 2
+mlp_ratio: 4
+use_qknorm: true
+use_swiglu: true
+use_rope: true
+use_rmsnorm: true
+wo_shift: false
+
+dim: 1024
+depth: 28
+num_heads: 16
+
+use_8bit_adam: false
+
+# -----------------------------
+# AE
+# -----------------------------
+ae_type: sd2
+ae_path: preset/ckpts/stable-diffusion-2-1-base
+lwdecoder_path: preset/ckpts/sd21_lwdecoder.pth
+
+# -----------------------------
+# Training configuration
+# -----------------------------
+learning_rate: 5.0e-5
+max_train_steps: 200
+checkpointing_steps: 50
+inference_steps: 50
+
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_weight_decay: 1.0e-2
+adam_epsilon: 1.0e-08
+max_grad_norm: 1.0
+
+lr_scheduler: constant_with_warmup
+lr_warmup_steps: 50
+lr_num_cycles: 1
+
+use_ema: true
+mixed_precision: 'no'
+tracker_project_name: vosr
+seed: 42
+ema_decay: 0.9999
+
+# -----------------------------
+# Flow matching / CFG
+# -----------------------------
+time_dist: ['uniform', 0, 1.0]
+
+cfg_ratio: 0.1
+cfg_scale: -0.5
+
+weak_cond_strength_aelq_list: [0.05, 0.25]
+cond_strength_aelq_list: [5, 1]
+
+interp_type: lin
+
+a: 1.0
+b: 1.0
+
+t_start: 0
+t_end: 1
+
+# -----------------------------
+# DINOv2
+# -----------------------------
+dinov2_size: 448
+dinov2_local_repo: /data/zhangdanning/Projects/VOSR/preset/dinov2
+
+enc_type: dinov2b
+enc_dim: 768
+layer_dinov2b_list: [8]
+encdim_ratio: 3
+
+# -----------------------------
+# Misc
+# -----------------------------
+use_pos: false
+train_steps: 2
+
+resume_ckpt: null
+pretrained_ckpt: preset/ckpts/VOSR_0.5B_ms/checkpoints/ema_model.safetensors
+
+# -----------------------------
+# Logging
+# -----------------------------
+logging_dir: logs
+output_dir: exp_vosr_multiref/
+report_to: none
+debug_dataset: false
+
+# -----------------------------
+# Dataset
+# -----------------------------
+dataset_type: ffhq_ref
+
+ffhq_ref_hq_dir: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/images1024x1024
+ffhq_ref_lq_dir: null
+
+ffhq_ref_train_csv: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/reference_mapping/train_references_small20.csv
+ffhq_ref_val_csv: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/reference_mapping/val_references_small10.csv
+ffhq_ref_test_csv: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/reference_mapping/test_references_small10.csv
+
+ffhq_ref_crop_mode: random
+
+# 必须为 true，否则 Dataset 不返回 ref
+ffhq_ref_return_ref: true
+
+# -----------------------------
+# Ref-LDM / CacheKV
+# -----------------------------
+use_refldm: True
+ref_feature_dim: 768
+
+# 第二阶段：多参考图
+use_multi_ref: True
+ffhq_ref_num_refs: 5
