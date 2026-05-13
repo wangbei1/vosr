@@ -1,253 +1,328 @@
-<div align="center">
+# RefLDM-VOSR
 
-<p align="center">
-  <img src="assets/logo.png" alt="VOSR logo" width="72%">
-</p>
+基于 VOSR 与 Ref-LDM 的参考图像人脸超分辨率训练项目。
 
-# VOSR: A Vision-Only Generative Model for Image Super-Resolution
+本项目在原始 VOSR（Flow-Matching Super-Resolution）基础上，引入 Ref-LDM 风格的：
 
-<p align="center"><i>A framework for native generative image restoration.</i></p>
+- Reference Cross Attention
+- Reference Feature Conditioning
+- Identity Loss
+- FFHQ-Ref Dataset
 
-#### &#x1F6A9; Accepted by CVPR 2026
-
-[![Paper](https://img.shields.io/badge/Paper-arXiv-b31b1b.svg)](https://arxiv.org/pdf/2604.03225)
-[![VOSR-ModelScope](https://img.shields.io/badge/VOSR-ModelScope-6246EA.svg)](https://modelscope.cn/models/LULALULALU/VOSR_CKPT)
-[![VOSR-HuggingFace](https://img.shields.io/badge/VOSR-HuggingFace-FCC624.svg)](https://huggingface.co/CSWRY/VOSR)
-[![ScreenSR-ModelScope](https://img.shields.io/badge/ScreenSR-ModelScope-0EA5E9.svg)](https://modelscope.cn/datasets/LULALULALU/ScreenSR)
-[![ScreenSR-HuggingFace](https://img.shields.io/badge/ScreenSR-HuggingFace-FFB000.svg)](https://huggingface.co/datasets/CSWRY/ScreenSR)
-
-[Rongyuan Wu](https://scholar.google.com/citations?user=A-U8zE8AAAAJ&hl=zh-CN)<sup>1,2,&#42;</sup> |
-[Lingchen Sun](https://scholar.google.com/citations?user=ZCDjTn8AAAAJ&hl=zh-CN)<sup>1,2,&#42;</sup> |
-[Zhengqiang Zhang](https://scholar.google.com/citations?user=UX26wSMAAAAJ&hl=en)<sup>1,2</sup> |
-[Xiangtao Kong](https://scholar.google.com/citations?user=lueNzSgAAAAJ&hl=zh-CN)<sup>1,2</sup> <br>
-[Jixin Zhao](https://scholar.google.com/citations?user=0Z89rfUAAAAJ)<sup>1,2</sup> |
-[Shihao Wang](https://scholar.google.com/citations?user=7TWugs4AAAAJ&hl=zh-CN)<sup>1</sup> |
-[Lei Zhang](https://www4.comp.polyu.edu.hk/~cslzhang/)<sup>1,2,&dagger;</sup>
-
-<sup>1</sup> The Hong Kong Polytechnic University  
-<sup>2</sup> OPPO Research Institute
-
-<sup>&#42;</sup> Equal contribution. <sup>&dagger;</sup> Corresponding author.
-
-</div>
-
-<!-- Optional teaser image -->
-<!-- ![teaser](assets/teaser.png) -->
-
-<p align="center">
-  <img src="assets/overview.jpg" alt="VOSR overview" width="100%">
-</p>
-<p align="center"><em>Overview of the VOSR framework, including the overall pipeline and our condition / guidance design.</em></p>
-
-
-## &#x1F4CC; Quick Links
-
-- [&#x1F4F0; News](#news)
-- [&#x1F9F0; Preparation](#preparation)
-- [&#x1F3CB;&#xFE0F; Training](#training)
-- [&#x1F50D; Inference](#inference)
-- [&#x1F4EE; Contact](#contact)
-- [&#x1F4DA; Citation](#citation)
-
-<a id="news"></a>
-## &#x1F4F0; News
-
-- 2026.04.10 Public release: training and inference code, [pretrained checkpoints](https://modelscope.cn/models/LULALULALU/VOSR_CKPT), bundled VAE / decoder assets, and the [ScreenSR](https://modelscope.cn/datasets/LULALULALU/ScreenSR) benchmark. Setup and file layout: [Preparation](#preparation); commands: [Training](#training) and [Inference](#inference).
-
----
-
-<p align="center">
-  <img src="assets/vosr_comparison_figure.png" alt="VOSR performance, efficiency, and training cost comparison" width="100%">
-</p>
-<p align="center"><em>Comparison with prior methods in performance, inference efficiency, and training cost.</em></p>
-
-<p align="center">
-  <img src="assets/vis_comp.jpg" alt="Qualitative comparison on natural and text-rich images" width="100%">
-</p>
-<p align="center"><em>VOSR better preserves fine structures and text readability.</em></p>
-
-<a id="preparation"></a>
-## &#x1F9F0; Preparation
-
-### Dependencies and Installation
-
-```bash
-## clone this repository
-git clone https://github.com/cswry/VOSR.git
-cd VOSR
-
-# create an environment with python >= 3.8
-conda create -n vosr python=3.8
-conda activate vosr
-pip install -r requirements.txt
-```
-
-### &#x1F4E6; Model Weights
-
-Download all pretrained weights from [ModelScope](https://modelscope.cn/models/LULALULALU/VOSR_CKPT) or [Hugging Face](https://huggingface.co/CSWRY/VOSR), and place them under `preset/ckpts/`. The expected structure:
+用于实现：
 
 ```text
-preset/ckpts/
-|-- Qwen-Image-vae-2d/          # Qwen-Image VAE (2D, for 1.4B models)
-|-- stable-diffusion-2-1-base/  # SD2.1 VAE (for 0.5B models)
-|-- sd21_lwdecoder.pth          # Lightweight decoder for SD2.1 VAE
-|-- torch_cache/                # DINOv2 pretrained weights
-|-- VOSR_0.5B_ms/               # 0.5B multi-step model
-|-- VOSR_0.5B_os/               # 0.5B one-step (distilled) model
-|-- VOSR_1.4B_ms/               # 1.4B multi-step model
-`-- VOSR_1.4B_os/               # 1.4B one-step (distilled) model
+Reference-based Face Super-Resolution
 ```
 
-#### VAE and decoder
+---
 
-For `VOSR-0.5B`, we provide `sd21_lwdecoder.pth`, a lightweight replacement for the original SD2.1 VAE decoder. It achieves comparable overall visual quality in our evaluation, while performing slightly better on text-rich and document-like images.
+# 1. 训练入口
 
-When scaling to `VOSR-1.4B`, we adopt the 16-channel Qwen-Image VAE to better preserve input fidelity. Although Qwen-Image is designed for T2I generation, it is released in a video-VAE form, which is unnecessarily slow for image SR inference. We therefore provide `Qwen-Image-vae-2d`, an image-only 2D variant extracted from the original model to remove the overhead of the full 3D design.
+训练从以下文件开始：
 
-### &#x1F5C2;&#xFE0F; Training Data
+```bash
+train_vosr_refldm_modular.py
+```
 
-We support two data loading modes, configured via `dataset_type` in the YAML config:
+启动方式：
 
-- `txt` - Each folder contains individual image files. A txt config lists folders with sampling weights.
-- `webdataset` - Each folder contains `.tar` shards. Same txt config format, loaded via WebDataset.
+```bash
+torchrun --nproc_per_node=1 \
+  train_vosr_refldm_modular.py \
+  --config configs/train_yml/multi_step/ffhq_config/test_stage1.yml
+```
 
-Create a dataset config file (e.g., `configs/train_txt/train_dataset_txt.txt`):
+---
+
+# 2. 整体训练流程
 
 ```text
-/path/to/dataset_A, 2
-/path/to/dataset_B, 1
-/path/to/dataset_C, 1
-```
-
-Each line: `<folder_path>, <sampling_weight>`. Higher weight = more frequent sampling.
-
-For `txt` mode, each folder should contain HQ images (`.png` / `.jpg`). For `webdataset` mode, each folder should contain `.tar` shards with images inside.
-
-### &#x1F9EA; New Real-World Paired Benchmark
-
-Download the [ScreenSR benchmark from ModelScope](https://modelscope.cn/datasets/LULALULALU/ScreenSR) or [Hugging Face](https://huggingface.co/datasets/CSWRY/ScreenSR), place it wherever you like, and then point `-i` to that folder when running inference.
-
-[ScreenSR](https://modelscope.cn/datasets/LULALULALU/ScreenSR) is a real-world paired benchmark for generative SR, built with a screen re-photography pipeline. It provides cleaner references, more diverse content, and broader variation in scenes and scales than existing real-world paired SR benchmarks.
-
-<p align="center">
-  <img src="assets/montage_13x10_256px.jpg" alt="ScreenSR benchmark montage" width="100%">
-</p>
-<p align="center"><em>Thumbnail montage of the ScreenSR benchmark, covering diverse scenes, subjects, and multilingual text.</em></p>
-
----
-
-<a id="training"></a>
-## &#x1F3CB;&#xFE0F; Training
-
-The provided training configs disable experiment tracking by default
-(`report_to: none`). To enable Weights & Biases logging, run `wandb login`
-with your own account and set `report_to: wandb` in the YAML config.
-
-### Multi-step Training
-
-```bash
-# VOSR-0.5B
-torchrun --nproc_per_node=8 train_vosr.py --config configs/train_yml/multi_step/VOSR_0.5B.yml
-
-# VOSR-1.4B
-torchrun --nproc_per_node=8 train_vosr.py --config configs/train_yml/multi_step/VOSR_1.4B.yml
-```
-
-### One-step Distillation
-
-Requires a trained multi-step teacher checkpoint. Set `teacher_ckpt` and `pretrained_ckpt` in the YAML config.
-
-```bash
-# VOSR-0.5B one-step
-torchrun --nproc_per_node=8 train_vosr_distill.py --config configs/train_yml/one_step/VOSR_0.5B.yml
-
-# VOSR-1.4B one-step
-torchrun --nproc_per_node=8 train_vosr_distill.py --config configs/train_yml/one_step/VOSR_1.4B.yml
+FFHQRefDataset
+    ↓
+读取 HQ / Reference 图像
+    ↓
+RealESRGAN degradation
+    ↓
+生成 LQ 图像
+    ↓
+DINOv2 提取 LQ feature
+    ↓
+Reference DINO feature
+    ↓
+LightningDiT
+    ├── cross_attn(lq_z)
+    └── ref_cross_attn(ref_z)
+    ↓
+Flow Matching Loss
+    ↓
+(Optional) Identity Loss
+    ↓
+反向传播与参数更新
 ```
 
 ---
 
-<a id="inference"></a>
-## &#x1F50D; Inference
-
-Single-GPU inference. 
-
-### Multi-step models
-
-Multi-step sampling defaults to **25 steps** (`--infer_steps`, default 25). Override if you need fewer or more function evaluations.
-
-Two knobs mainly affect the trade-off between faithfulness to the LR input and generative detail (both can be set via CLI to override `args.json`):
-
-- `--cfg_scale` - Higher values tend to emphasize fidelity to the condition; lower values give more generative freedom. The sweet spot depends on input degradation strength. In our experiments, roughly `-0.5` to `2` is a usable range; `0.5` is a practical default.
-- `--weak_cond_strength_aelq` - During training this is sampled uniformly in `[0.05, 0.25]` so the checkpoint supports a wide range at inference via the same flag (smaller -> more generative, larger -> more faithful). Default `0.1`.
-
-Benchmark presets (multi-step): for apples-to-apples evaluation we use `--cfg_scale -0.5` on RealSR and `--cfg_scale 0.5` on [ScreenSR](https://modelscope.cn/datasets/LULALULALU/ScreenSR).
-
-```bash
-# Inputs under preset/datasets/inp_data follow RealSR-style evaluation; use --cfg_scale -0.5 (see benchmark presets above).
-
-# VOSR-0.5B multi-step (25 steps)
-python inference_vosr.py \
-    -c preset/ckpts/VOSR_0.5B_ms \
-    -i preset/datasets/inp_data \
-    -o preset/results \
-    -u 4
-
-# VOSR-1.4B multi-step (25 steps)
-python inference_vosr.py \
-    -c preset/ckpts/VOSR_1.4B_ms \
-    -i preset/datasets/inp_data \
-    -o preset/results \
-    -u 4
-```
-
-### One-step models
-
-One-step models use `--infer_steps` with default `1` (typical for distilled checkpoints).
-
-```bash
-# VOSR-0.5B one-step
-python inference_vosr_onestep.py \
-    -c preset/ckpts/VOSR_0.5B_os \
-    -i preset/datasets/inp_data \
-    -o preset/results \
-    -u 4
-
-# VOSR-1.4B one-step
-python inference_vosr_onestep.py \
-    -c preset/ckpts/VOSR_1.4B_os \
-    -i preset/datasets/inp_data \
-    -o preset/results \
-    -u 4
-```
-
-Key arguments: `-c` checkpoint path, `-i` input image or folder, `-o` output directory, `-u` upscale factor. Multi-step (`inference_vosr.py`): `--infer_steps` (default `25`), `--cfg_scale`, `--weak_cond_strength_aelq` (see above). One-step (`inference_vosr_onestep.py`): `--infer_steps` (default `1`). Use `--tile_size 512` for large images.
+# 3. 关键文件说明
 
 ---
 
-<a id="contact"></a>
-## &#x1F4EE; Contact
+## 3.1 train_vosr_refldm_modular.py
 
-If you have any questions, please feel free to contact: `rong-yuan.wu@connect.polyu.hk`
+训练主入口。
 
-<a id="citation"></a>
-## &#x1F4DA; Citation
+负责：
 
-If VOSR is useful for your research, please consider citing:
+- 读取 yml 配置；
+- 加载 DINOv2；
+- 加载 VAE；
+- 构建 LightningDiT；
+- patch Ref Attention；
+- 构建 FFHQRefDataset；
+- 构建 VOSR；
+- 构建 RefLDM addon；
+- 训练循环；
+- checkpoint 保存；
+- eval 验证。
 
-```bibtex
-@inproceedings{wu2026vosr,
-  title   = {VOSR: A Vision-Only Generative Model for Image Super-Resolution},
-  author  = {Wu, Rongyuan and Sun, Lingchen and Zhang, Zhengqiang and Kong, Xiangtao and Zhao, Jixin and Wang, Shihao and Zhang, Lei},
-  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition},
-  year    = {2026}
+这是整个项目最核心的训练文件。
+
+---
+
+## 3.2 dataloaders/ffhq_ref_dataset.py
+
+FFHQ-Ref 数据集读取。
+
+负责：
+
+- 读取 FFHQ-Ref csv；
+- 加载 HQ 图像；
+- 加载 reference 图像；
+- 返回：
+
+```python
+{
+    "hq": ...,
+    "ref": ...
 }
 ```
 
-## Acknowledgements
+---
 
-This project benefits from [stable-diffusion-2-1-base](https://huggingface.co/Manojb/stable-diffusion-2-1-base), [LightningDiT](https://github.com/hustvl/LightningDiT), [Qwen-Image](https://huggingface.co/Qwen/Qwen-Image), [DINOv2](https://github.com/facebookresearch/dinov2), [BasicSR](https://github.com/XPixelGroup/BasicSR), [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN), [RCGM](https://github.com/LINs-lab/RCGM), and [Shortcut-models](https://github.com/kvfrans/shortcut-models). We thank the authors for their open-source contributions.
+## 3.3 models/refldm_vosr/ref_attention_patch.py
 
-## &#x2696;&#xFE0F; License
+Reference Attention 核心结构修改。
 
-This project is released under the Apache License 2.0 unless otherwise noted. See [LICENSE](LICENSE) for details. Downloadable model weights, benchmark data, and external assets may have separate terms on their hosting pages.
+该文件会 patch 原始 LightningDiT：
+
+原始 VOSR：
+
+```python
+x = x + self.cross_attn(x, z)
+```
+
+当前项目：
+
+```python
+x = x + self.cross_attn(x, lq_z)
+x = x + gate * scale * self.ref_cross_attn(x, ref_z)
+```
+
+即：
+
+```text
+LQ feature  → 原始 cross_attn
+Ref feature → 新增 ref_cross_attn
+```
+
+这是 Ref-LDM 接入 VOSR 的核心文件。
+
+---
+
+## 3.4 models/refldm_vosr/addon_stageE.py
+
+Stage-E Reference 训练逻辑。
+
+核心函数：
+
+```python
+prepare_train_pack()
+compute_loss()
+```
+
+负责：
+
+- Reference feature 提取；
+- latent 编码；
+- 构造训练输入；
+- 计算 loss；
+- 调用 Identity Loss。
+
+---
+
+## 3.5 models/refldm_vosr/vosr_stageE_patch.py
+
+修改原始 VOSR：
+
+- Flow Matching Loss
+- CFG Sampling
+- Ref-aware Sampling
+
+使其支持：
+
+```python
+z = {
+    "lq": lq_z,
+    "ref": ref_z
+}
+```
+
+并新增：
+
+```python
+sample_multistep_fm_ref()
+```
+
+用于 reference-aware 推理。
+
+---
+
+## 3.6 models/refldm_vosr/losses_stageE.py
+
+Stage-E Identity Loss。
+
+支持：
+
+```yaml
+identity_target:
+  - gt
+  - ref
+  - both
+```
+
+用于：
+
+```text
+IDS_ref
+IDS_gt
+```
+
+训练。
+
+---
+
+## 3.7 models/refldm_vosr/identity_loss.py
+
+ArcFace / InsightFace Identity Loss 封装。
+
+加载：
+
+```yaml
+identity_model_path
+```
+
+用于身份一致性计算。
+
+---
+
+## 3.8 models/refldm_vosr/eval_refaware.py
+
+Reference-aware eval。
+
+负责：
+
+- 读取测试 csv；
+- 构造 ref condition；
+- build_eval_condition()；
+- 推理时使用：
+
+```python
+sample_multistep_fm_ref()
+```
+
+---
+
+# 4. 三阶段训练
+
+---
+
+## Stage 1：Ref-only Warmup
+位置：configs/train_yml/multi_step/ffhq_config/test_stage1.yml
+目标：
+
+- 学习 Reference Attention；
+- 不破坏原始 VOSR。
+
+配置：
+
+```yaml
+freeze_backbone: true
+train_ref_only: true
+use_identity_loss: false
+learning_rate: 0.0001
+```
+
+重点观察：
+
+```text
+ref_attn_gate
+ref_cross_attn grad
+LPIPS
+MUSIQ
+```
+
+---
+
+## Stage 2：Reference Identity Alignment
+位置：configs/train_yml/multi_step/ffhq_config/test_stage2.yml
+
+目标：
+
+- 提升 IDS_ref；
+- 学习身份一致性。
+
+配置：
+
+```yaml
+freeze_backbone: true
+train_ref_only: true
+use_identity_loss: true
+identity_target: ref
+identity_loss_weight: 0.00005
+learning_rate: 0.00005
+```
+
+重点观察：
+
+```text
+IDS_ref
+LPIPS
+```
+
+---
+
+## Stage 3：Full Finetune
+位置：configs/train_yml/multi_step/ffhq_config/test_stage3.yml
+
+目标：
+
+- 联合优化超分与身份；
+- 微调 backbone。
+
+配置：
+
+```yaml
+freeze_backbone: false
+train_ref_only: false
+identity_target: both
+learning_rate: 0.0000005
+```
+
+重点观察：
+
+```text
+IDS_ref
+IDS_gt
+LPIPS
+MUSIQ
+```

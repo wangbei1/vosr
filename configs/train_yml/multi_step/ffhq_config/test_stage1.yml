@@ -1,0 +1,156 @@
+# -----------------------------
+# Common VOSR / FFHQ-Ref config
+# -----------------------------
+
+train_dataset_config: null
+
+test_lq_dir: null
+test_gt_dir: null
+test_upscale: 1
+
+ffhq_ref_test_use_csv_for_eval: true
+ffhq_ref_eval_hq_dir: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/images1024x1024
+ffhq_ref_eval_lq_dir: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/test_images/severe_degrad
+ffhq_ref_eval_max_images: 50
+
+infer_steps: 25
+resolution: 512
+dataloader_num_workers: 2
+
+patch_size: 2
+mlp_ratio: 4
+use_qknorm: true
+use_swiglu: true
+use_rope: true
+use_rmsnorm: true
+wo_shift: false
+
+dim: 1024
+depth: 28
+num_heads: 16
+
+use_8bit_adam: false
+
+ae_type: sd2
+ae_path: preset/ckpts/stable-diffusion-2-1-base
+lwdecoder_path: preset/ckpts/sd21_lwdecoder.pth
+
+checkpointing_steps: 500
+inference_steps: 500
+
+adam_beta1: 0.9
+adam_beta2: 0.95
+adam_weight_decay: 1.0e-2
+adam_epsilon: 1.0e-08
+max_grad_norm: 1.0
+
+lr_scheduler: constant_with_warmup
+lr_warmup_steps: 100
+lr_num_cycles: 1
+
+use_ema: true
+mixed_precision: fp16
+tracker_project_name: vosr
+seed: 42
+ema_decay: 0.9999
+
+time_dist: ['uniform', 0, 1.0]
+
+weak_cond_strength_aelq_list: [0.05, 0.25]
+cond_strength_aelq_list: [5, 1]
+
+dinov2_size: 448
+enc_type: dinov2b
+enc_dim: 768
+layer_dinov2b_list: [8]
+dinov2_local_repo: /data/zhangdanning/Projects/VOSR/preset/dinov2
+
+interp_type: lin
+a: 1.0
+b: 1.0
+
+use_pos: false
+train_steps: 2
+encdim_ratio: 3
+t_start: 0
+t_end: 1
+
+pretrained_ckpt: preset/ckpts/VOSR_0.5B_ms/checkpoints/ema_model.safetensors
+
+logging_dir: logs
+report_to: tensorboard
+
+dataset_type: ffhq_ref
+
+ffhq_ref_hq_dir: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/images1024x1024
+ffhq_ref_lq_dir: null
+
+ffhq_ref_train_csv: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/reference_mapping/train_references.csv
+ffhq_ref_val_csv: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/reference_mapping/val_references.csv
+ffhq_ref_test_csv: /data/zhangdanning/Projects/ref-ldm/data/FFHQ-Ref/reference_mapping/test_references.csv
+
+ffhq_ref_crop_mode: random
+ffhq_ref_return_ref: true
+ffhq_ref_num_refs: 1
+
+identity_model_path: /data/zhangdanning/Projects/ref-ldm/pretrained/insightface_webface_r50.onnx
+
+# =========================
+# Stage 1
+# Ref-only warmup
+# =========================
+
+train_batch_size: 4
+gradient_accumulation_steps: 1
+
+learning_rate: 1.0e-4
+max_train_steps: 10000
+
+freeze_backbone: true
+train_ref_only: true
+
+cfg_scale: 1.0
+cfg_ratio: 0.1
+
+# -----------------
+# Ref-LDM
+# -----------------
+use_refldm: true
+use_ref_feature: true
+use_ref_attention: true
+use_ref_latent: false
+
+# -----------------
+# Identity loss
+# -----------------
+use_identity_loss: false
+
+identity_target: ref
+identity_loss_weight: 0.00005
+
+identity_timestep_gamma: 0.5
+identity_start_step: 2000
+identity_every_n_steps: 4
+
+identity_ref_weight: 1.0
+identity_gt_weight: 0.5
+
+# -----------------
+# Ref attention
+# -----------------
+ref_attn_init_gate: 0.1  # Changed from 0.0 to enable ref attention from start
+ref_attn_scale: 0.1
+
+ref_attn_tokens_per_ref: 64
+ref_attn_max_total_tokens: 256
+ref_dino_forward_chunk: 8
+
+ref_feature_weight: 0.2
+
+# -----------------
+# Resume
+# -----------------
+resume_ckpt: null
+
+output_dir: exp_stage1_refonly/
+suffix: '_stage1_refonly'
