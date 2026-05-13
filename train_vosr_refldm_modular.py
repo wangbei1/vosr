@@ -14,7 +14,9 @@ from vosr_extra import VOSR
 from models.refldm_vosr import RefLDMVOSRAddon, patch_vosr_loss_return_extra
 from models.refldm_vosr.vosr_stageE_patch import patch_vosr_stageD
 from models.refldm_vosr.addon_stageE import RefLDMVOSRStageEAddon
+from models.refldm_vosr.addon_stageD import RefLDMVOSRStageDAddon
 from models.refldm_vosr.ref_attention_patch import patch_lightningdit_ref_attention
+# from models.refldm_vosr.vosr_stageD_patch import patch_vosr_stageD
 from models.refldm_vosr.eval_refaware import build_eval_condition
 from datasets import load_dataset
 from dataloaders import TxtPairDataset, build_webdataset_pipeline, FFHQRefDataset
